@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>仪器使用时间追踪系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- 引入Supabase客户端库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        .header {
+            text-align: center;
+            color: white;
+            padding: 20px;
+            position: relative;
+        }
+        .header h1 {
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        .admin-login {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 8px 15px;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 20px;
+            transition: all 0.3s;
+        }
+        .admin-login:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            padding: 25px;
+            transition: all 0.3s ease;
+        }
+        .instrument-info {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .instrument-info h2 {
+            color: #2575fc;
+            margin-bottom: 15px;
+            font-size: 1.8rem;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .info-item {
+            text-align: left;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .info-item h3 {
+            color: #6a11cb;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+        .info-item p {
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        .expired {
+            color: #ff3b30;
+            font-weight: bold;
+        }
+        .expiring-soon {
+            color: #ff9500;
+            font-weight: bold;
+        }
+        .valid {
+            color: #4cd964;
+            font-weight: bold;
+        }
+        .action-section {
+            text-align: center;
+            margin: 25px 0;
+        }
+        .btn {
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            margin: 5px;
+        }
+        .btn-start {
+            background: #4cd964;
+            color: white;
+        }
+        .btn-end {
+            background: #ff3b30;
+            color: white;
+        }
+        .btn-export {
+            background: #ff9500;
+            color: white;
+        }
+        .btn-refresh {
+            background: #5ac8fa;
+            color: white;
+        }
+        .btn-status {
+            background: #8e44ad;
+            color: white;
+        }
+        .btn-validity {
+            background: #007aff;
+            color: white;
+        }
+        .btn-submit {
+            background: #6a11cb;
+            color: white;
+        }
+        .btn-admin {
+            background: #ff9500;
+            color: white;
+        }
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .status-indicator {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 50px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        .status-available {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .status-in-use {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .status-unavailable {
+            background: #f5f5f5;
+            color: #616161;
+        }
+        .status-maintenance {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+        .timer {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #2575fc;
+            margin: 20px 0;
+            font-family: monospace;
+        }
+        .history-section {
+            margin-top: 30px;
+        }
+        .history-section h3 {
+            color: #6a11cb;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .history-item {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        .qr-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+        }
+        #qrcode {
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        .instructions {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .instructions h3 {
+            color: #0d47a1;
+            margin-bottom: 15px;
+        }
+        .instructions ol {
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+        .user-input {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .user-input input {
+            padding: 12px 20px;
+            border: 2px solid #ddd;
+            border-radius: 50px;
+            font-size: 1rem;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .user-input input:focus {
+            border-color: #2575fc;
+            outline: none;
+        }
+        .export-section {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            background: #4cd964;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+        .notification.show {
+            transform: translateX(0);
+        }
+        .notification.error {
+            background: #ff3b30;
+        }
+        .notification.warning {
+            background: #ff9500;
+        }
+        .in-use-notice {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            border-left: 4px solid #ffc107;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        .status-panel {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            display: none;
+        }
+        .status-panel select {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 50px;
+            font-size: 1rem;
+            margin: 0 10px;
+            text-align: center;
+        }
+        .status-panel input {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 50px;
+            font-size: 1rem;
+            margin: 0 10px;
+            width: 200px;
+            text-align: center;
+        }
+        .validity-panel {
+            background: #f0f7ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            display: none;
+        }
+        .validity-panel h3 {
+            color: #007aff;
+            margin-bottom: 15px;
+        }
+        .validity-input {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .validity-input input {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 50px;
+            font-size: 1rem;
+            text-align: center;
+        }
+        .admin-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            display: none;
+        }
+        .admin-section h3 {
+            color: #6a11cb;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .instrument-input-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .admin-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .admin-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .admin-modal input {
+            width: 100%;
+            padding: 12px 20px;
+            margin: 15px 0;
+            border: 2px solid #ddd;
+            border-radius: 50px;
+            font-size: 1rem;
+            text-align: center;
+        }
+        .admin-modal .btn {
+            margin-top: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        @media (max-width: 600px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+            .btn {
+                width: 100%;
+                padding: 18px;
+            }
+            .status-panel select, .status-panel input {
+                width: 100%;
+                margin: 10px 0;
+            }
+            .validity-input {
+                flex-direction: column;
+                align-items: center;
+            }
+            .validity-input input {
+                width: 100%;
+                margin: 5px 0;
+            }
+            .header {
+                padding-top: 60px;
+            }
+            .admin-login {
+                top: 10px;
+                right: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="notification" id="notification"></div>
+    
+    <!-- 管理员登录模态框 -->
+    <div class="admin-modal" id="admin-modal">
+        <div class="admin-modal-content">
+            <h2>管理员登录</h2>
+            <p>请输入管理员密码</p>
+            <input type="password" id="admin-password" placeholder="管理员密码">
+            <button class="btn btn-admin" id="admin-login-btn">登录</button>
+            <button class="btn" id="admin-cancel-btn" style="background: #ccc;">取消</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>仪器使用时间追踪系统</h1>
+            <p>输入仪器编号以检索和使用仪器</p>
+            <div class="admin-login" id="admin-login-link">管理员登录</div>
+        </div>
+        
+        <!-- 仪器编号输入部分 -->
+        <div class="card" id="instrument-input-card">
+            <div class="instrument-input-section">
+                <h2>请输入仪器编号</h2>
+                <div class="user-input">
+                    <input type="text" id="instrument-id-input" placeholder="输入仪器编号">
+                </div>
+                <button class="btn btn-submit" id="submit-instrument-btn">检索仪器</button>
+            </div>
+        </div>
+        
+        <!-- 主内容区域，初始隐藏 -->
+        <div class="card" id="main-content-card" style="display: none;">
+            <div class="instrument-info">
+                <h2 id="instrument-name">仪器名称</h2>
+                <div class="status-indicator" id="status-indicator">状态：加载中...</div>
+                
+                <div class="info-grid">
+                    <div class="info-item">
+                        <h3>仪器编号</h3>
+                        <p id="instrument-id">--</p>
+                    </div>
+                    <div class="info-item">
+                        <h3>型号</h3>
+                        <p id="instrument-model">--</p>
+                    </div>
+                    <div class="info-item">
+                        <h3>验证有效期</h3>
+                        <p id="validation-date">加载中...</p>
+                    </div>
+                    <div class="info-item">
+                        <h3>校准有效期</h3>
+                        <p id="calibration-date">加载中...</p>
+                    </div>
+                    <div class="info-item">
+                        <h3>负责人</h3>
+                        <p id="responsible-person">--</p>
+                    </div>
+                    <div class="info-item">
+                        <h3>位置</h3>
+                        <p id="instrument-location">--</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="validity-panel" id="validity-panel">
+                <h3>有效期管理</h3>
+                <div class="validity-input">
+                    <input type="date" id="validation-input" placeholder="验证有效期">
+                    <input type="date" id="calibration-input" placeholder="校准有效期">
+                </div>
+                <button class="btn btn-validity" id="validity-btn">更新有效期</button>
+                <p id="validity-info" style="margin-top: 10px; font-size: 0.9em; color: #666;"></p>
+            </div>
+            
+            <div class="status-panel" id="status-panel">
+                <h3>设备状态管理</h3>
+                <select id="status-select">
+                    <option value="available">可用</option>
+                    <option value="unavailable">不可用</option>
+                    <option value="maintenance">维修中</option>
+                </select>
+                <input type="text" id="status-reason" placeholder="状态变更原因">
+                <button class="btn btn-status" id="status-btn">更新状态</button>
+                <p id="status-info" style="margin-top: 10px; font-size: 0.9em; color: #666;"></p>
+            </div>
+            
+            <div class="action-section">
+                <div id="in-use-notice" class="in-use-notice" style="display: none;">
+                    <p>该仪器正在被 <strong id="current-user-name"></strong> 使用，已使用 <strong id="current-usage-time">00:00:00</strong></p>
+                </div>
+                
+                <div id="start-section">
+                    <p>当前时间：<span id="current-time"></span></p>
+                    <div class="user-input">
+                        <input type="text" id="user-name" placeholder="请输入您的姓名">
+                    </div>
+                    <button class="btn btn-start" id="start-btn">开始使用</button>
+                </div>
+                
+                <div id="end-section" style="display: none;">
+                    <p>开始时间：<span id="start-time"></span></p>
+                    <p>使用人：<span id="current-user"></span></p>
+                    <div class="timer" id="duration">00:00:00</div>
+                    <button class="btn btn-end" id="end-btn">结束使用</button>
+                </div>
+            </div>
+            
+            <div class="history-section">
+                <h3>最近使用记录 <button class="btn btn-refresh" id="refresh-btn">刷新</button></h3>
+                <div id="usage-history">
+                    <div class="history-item">
+                        <span>加载中...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-section" id="admin-history-section">
+                <h3>状态变更记录</h3>
+                <div id="status-history">
+                    <div class="history-item">
+                        <span>加载中...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="export-section" id="export-section" style="display: none;">
+                <button class="btn btn-export" id="export-btn">导出Excel报表</button>
+            </div>
+        </div>
+        
+        <div class="card" id="qr-card" style="display: none;">
+            <div class="qr-section">
+                <h3></h3>
+                <div id="qrcode"></div>
+                <p>使用微信扫描此二维码</p>
+            </div>
+            
+            <div class="instructions">
+                <h3>使用说明</h3>
+                <ol>
+                    <li>使用微信扫描上方二维码</li>
+                    <li>输入您的姓名，点击"开始使用"按钮</li>
+                    <li>使用完毕后，再次扫描二维码</li>
+                    <li>点击"结束使用"按钮完成记录</li>
+                    <li>系统将自动计算使用时长并记录使用人信息</li>
+                    <li>管理员可通过"导出Excel报表"按钮导出完整使用记录</li>
+                    <li>点击"刷新"按钮查看最新的使用记录</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化变量
+            let instrumentId = '';
+            let instrumentName = '';
+            let startTime = null;
+            let timerInterval = null;
+            let currentUserName = '';
+            let inUseTimerInterval = null;
+            let currentStatus = 'available';
+            let validationDate = null;
+            let calibrationDate = null;
+            let isAdmin = false;
+            const ADMIN_PASSWORD = 'Aa123456'; // 管理员密码
+            
+            // Supabase配置 - 替换为你的Supabase项目URL和anon key
+            const SUPABASE_URL = 'https://buvgkyrdijqniojgmobf.supabase.co'; // 替换为你的Supabase URL
+            const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1dmdreXJkaWpxbmlvamdtb2JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NTUzMTMsImV4cCI6MjA3MzMzMTMxM30.k3tpl18Jg44VdsLDT4iZ9L9Lajh0eZDEgzEle3egfTk'; // 替换为你的Supabase anon key
+            
+            // 创建Supabase客户端
+            const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            
+            // 获取DOM元素
+            const instrumentInputCard = document.getElementById('instrument-input-card');
+            const mainContentCard = document.getElementById('main-content-card');
+            const qrCard = document.getElementById('qr-card');
+            const instrumentIdInput = document.getElementById('instrument-id-input');
+            const submitInstrumentBtn = document.getElementById('submit-instrument-btn');
+            const startSection = document.getElementById('start-section');
+            const endSection = document.getElementById('end-section');
+            const startBtn = document.getElementById('start-btn');
+            const endBtn = document.getElementById('end-btn');
+            const exportBtn = document.getElementById('export-btn');
+            const refreshBtn = document.getElementById('refresh-btn');
+            const statusBtn = document.getElementById('status-btn');
+            const validityBtn = document.getElementById('validity-btn');
+            const currentTimeEl = document.getElementById('current-time');
+            const startTimeEl = document.getElementById('start-time');
+            const durationEl = document.getElementById('duration');
+            const statusIndicator = document.getElementById('status-indicator');
+            const userNameInput = document.getElementById('user-name');
+            const currentUserEl = document.getElementById('current-user');
+            const usageHistoryEl = document.getElementById('usage-history');
+            const statusHistoryEl = document.getElementById('status-history');
+            const notificationEl = document.getElementById('notification');
+            const inUseNoticeEl = document.getElementById('in-use-notice');
+            const currentUserNameEl = document.getElementById('current-user-name');
+            const currentUsageTimeEl = document.getElementById('current-usage-time');
+            const statusSelect = document.getElementById('status-select');
+            const statusReason = document.getElementById('status-reason');
+            const statusInfo = document.getElementById('status-info');
+            const validationDateEl = document.getElementById('validation-date');
+            const calibrationDateEl = document.getElementById('calibration-date');
+            const validationInput = document.getElementById('validation-input');
+            const calibrationInput = document.getElementById('calibration-input');
+            const validityInfo = document.getElementById('validity-info');
+            const instrumentNameEl = document.getElementById('instrument-name');
+            const instrumentIdEl = document.getElementById('instrument-id');
+            const instrumentModelEl = document.getElementById('instrument-model');
+            const responsiblePersonEl = document.getElementById('responsible-person');
+            const instrumentLocationEl = document.getElementById('instrument-location');
+            const adminLoginLink = document.getElementById('admin-login-link');
+            const adminModal = document.getElementById('admin-modal');
+            const adminPasswordInput = document.getElementById('admin-password');
+            const adminLoginBtn = document.getElementById('admin-login-btn');
+            const adminCancelBtn = document.getElementById('admin-cancel-btn');
+            const validityPanel = document.getElementById('validity-panel');
+            const statusPanel = document.getElementById('status-panel');
+            const adminHistorySection = document.getElementById('admin-history-section');
+            const exportSection = document.getElementById('export-section');
+            
+            // 显示通知
+            function showNotification(message, type = 'success') {
+                notificationEl.textContent = message;
+                notificationEl.className = 'notification';
+                
+                if (type === 'error') {
+                    notificationEl.classList.add('error');
+                } else if (type === 'warning') {
+                    notificationEl.classList.add('warning');
+                }
+                
+                notificationEl.classList.add('show');
+                
+                setTimeout(() => {
+                    notificationEl.classList.remove('show');
+                }, 3000);
+            }
+            
+            // 更新当前时间
+            function updateCurrentTime() {
+                const now = new Date();
+                currentTimeEl.textContent = now.toLocaleTimeString();
+            }
+            
+            // 初始化当前时间
+            updateCurrentTime();
+            setInterval(updateCurrentTime, 1000);
+            
+            // 检查有效期是否过期
+            function checkValidityExpired() {
+                const now = new Date();
+                const validationExpired = validationDate && new Date(validationDate) < now;
+                const calibrationExpired = calibrationDate && new Date(calibrationDate) < now;
+                
+                return validationExpired || calibrationExpired;
+            }
+            
+            // 更新有效期显示
+            function updateValidityDisplay() {
+                const now = new Date();
+                const thirtyDaysFromNow = new Date();
+                thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+                
+                // 更新验证有效期显示
+                if (validationDate) {
+                    const validationDateObj = new Date(validationDate);
+                    if (validationDateObj < now) {
+                        validationDateEl.innerHTML = `${validationDateObj.toLocaleDateString()} <span class="expired">(已过期)</span>`;
+                    } else if (validationDateObj <= thirtyDaysFromNow) {
+                        validationDateEl.innerHTML = `${validationDateObj.toLocaleDateString()} <span class="expiring-soon">(即将到期)</span>`;
+                    } else {
+                        validationDateEl.innerHTML = `${validationDateObj.toLocaleDateString()} <span class="valid">(有效)</span>`;
+                    }
+                } else {
+                    validationDateEl.innerHTML = '<span class="expired">未设置</span>';
+                }
+                
+                // 更新校准有效期显示
+                if (calibrationDate) {
+                    const calibrationDateObj = new Date(calibrationDate);
+                    if (calibrationDateObj < now) {
+                        calibrationDateEl.innerHTML = `${calibrationDateObj.toLocaleDateString()} <span class="expired">(已过期)</span>`;
+                    } else if (calibrationDateObj <= thirtyDaysFromNow) {
+                        calibrationDateEl.innerHTML = `${calibrationDateObj.toLocaleDateString()} <span class="expiring-soon">(即将到期)</span>`;
+                    } else {
+                        calibrationDateEl.innerHTML = `${calibrationDateObj.toLocaleDateString()} <span class="valid">(有效)</span>`;
+                    }
+                } else {
+                    calibrationDateEl.innerHTML = '<span class="expired">未设置</span>';
+                }
+                
+                // 检查是否过期并自动更新状态
+                if (checkValidityExpired() && currentStatus === 'available') {
+                    // 自动将状态设置为不可用
+                    const reason = validationDate && new Date(validationDate) < now ? 
+                                  '验证有效期已过期' : '校准有效期已过期';
+                    
+                    updateStatus('unavailable', reason, '系统');
+                    showNotification(`仪器因${reason}自动设置为不可用状态`, 'warning');
+                }
+            }
+            
+            // 从数据库获取仪器信息
+            async function getInstrumentInfo(id) {
+                try {
+                    // 这里假设你有一个名为'instruments'的表存储仪器基本信息
+                    const { data, error } = await supabase
+                        .from('instruments')
+                        .select('*')
+                        .eq('id', id)
+                        .single();
+                    
+                    if (error) throw error;
+                    
+                    if (!data) {
+                        showNotification('未找到该仪器编号', 'error');
+                        return null;
+                    }
+                    
+                    return data;
+                } catch (error) {
+                    console.error('获取仪器信息失败:', error);
+                    showNotification('获取仪器信息失败，请检查网络连接', 'error');
+                    return null;
+                }
+            }
+            
+            // 从云端获取仪器状态
+            async function checkInstrumentStatus() {
+                try {
+                    setLoading(true);
+                    
+                    // 获取使用状态
+                    const { data: usageData, error: usageError } = await supabase
+                        .from('usage_records')
+                        .select('*')
+                        .eq('instrument_id', instrumentId)
+                        .is('end_time', null)
+                        .order('start_time', { ascending: false })
+                        .limit(1);
+                    
+                    if (usageError) throw usageError;
+                    
+                    // 获取设备状态
+                    const { data: statusData, error: statusError } = await supabase
+                        .from('status_records')
+                        .select('*')
+                        .eq('instrument_id', instrumentId)
+                        .order('change_time', { ascending: false })
+                        .limit(1);
+                    
+                    if (statusError) throw statusError;
+                    
+                    // 获取有效期信息
+                    const { data: validityData, error: validityError } = await supabase
+                        .from('validity_records')
+                        .select('*')
+                        .eq('instrument_id', instrumentId)
+                        .order('update_time', { ascending: false })
+                        .limit(1);
+                    
+                    if (validityError) throw validityError;
+                    
+                    if (validityData && validityData.length > 0) {
+                        validationDate = validityData[0].validation_date;
+                        calibrationDate = validityData[0].calibration_date;
+                        updateValidityDisplay();
+                    } else {
+                        validationDate = null;
+                        calibrationDate = null;
+                        updateValidityDisplay();
+                    }
+                    
+                    if (statusData && statusData.length > 0) {
+                        currentStatus = statusData[0].status;
+                        updateStatusDisplay(
+                            currentStatus, 
+                            statusData[0].reason, 
+                            statusData[0].changed_by, 
+                            statusData[0].change_time
+                        );
+                    } else {
+                        // 默认状态为可用
+                        currentStatus = 'available';
+                        updateStatusDisplay(currentStatus, '', '', '');
+                    }
+                    
+                    // 检查有效期是否过期
+                    if (checkValidityExpired() && currentStatus === 'available') {
+                        const reason = validationDate && new Date(validationDate) < new Date() ? 
+                                      '验证有效期已过期' : '校准有效期已过期';
+                        
+                        updateStatus('unavailable', reason, '系统');
+                        showNotification(`仪器因${reason}自动设置为不可用状态`, 'warning');
+                    }
+                    
+                    if (usageData && usageData.length > 0) {
+                        const record = usageData[0];
+                        if (record.end_time === null && currentStatus === 'available') {
+                            // 仪器正在使用中
+                            showEndSection(record.start_time, record.user_name, record.id);
+                            updateInUseTimer(new Date(record.start_time));
+                        } else {
+                            // 仪器可用或不可用
+                            showStartSection();
+                        }
+                    } else {
+                        // 仪器可用或不可用
+                        showStartSection();
+                    }
+                    
+                    // 加载历史记录
+                    loadHistory();
+                    loadStatusHistory();
+                } catch (error) {
+                    console.error('获取仪器状态失败:', error);
+                    showNotification('网络错误，无法获取仪器状态', 'error');
+                    showStartSection();
+                    loadHistory();
+                } finally {
+                    setLoading(false);
+                }
+            }
+            
+            // 更新状态显示
+            function updateStatusDisplay(status, reason, changedBy, changedOn) {
+                currentStatus = status;
+                statusSelect.value = status;
+                
+                let statusText = '';
+                let statusClass = '';
+                
+                switch(status) {
+                    case 'available':
+                        statusText = '可用';
+                        statusClass = 'status-available';
+                        statusInfo.textContent = reason ? `原因: ${reason}` : '';
+                        break;
+                    case 'unavailable':
+                        statusText = '不可用';
+                        statusClass = 'status-unavailable';
+                        statusInfo.textContent = reason ? `原因: ${reason}` : '';
+                        break;
+                    case 'maintenance':
+                        statusText = '维修中';
+                        statusClass = 'status-maintenance';
+                        statusInfo.textContent = reason ? `原因: ${reason}` : '';
+                        break;
+                }
+                
+                if (changedBy && changedOn) {
+                    const changedDate = new Date(changedOn);
+                    statusInfo.textContent += ` | 由 ${changedBy} 于 ${changedDate.toLocaleString()} 更新`;
+                }
+                
+                statusIndicator.textContent = `状态：${statusText}`;
+                statusIndicator.className = `status-indicator ${statusClass}`;
+                
+                // 根据状态禁用或启用开始按钮
+                if (status !== 'available') {
+                    startBtn.disabled = true;
+                    startBtn.title = `仪器当前${statusText}，无法使用`;
+                } else {
+                    startBtn.disabled = false;
+                    startBtn.title = '';
+                }
+            }
+            
+            // 设置加载状态
+            function setLoading(isLoading) {
+                const buttons = [startBtn, endBtn, refreshBtn, exportBtn, statusBtn, validityBtn, submitInstrumentBtn];
+                buttons.forEach(btn => {
+                    if (isLoading) {
+                        btn.disabled = true;
+                        btn.innerHTML = '<span class="loading"></span>';
+                    } else {
+                        btn.disabled = false;
+                        if (btn === startBtn) btn.textContent = '开始使用';
+                        if (btn === endBtn) btn.textContent = '结束使用';
+                        if (btn === refreshBtn) btn.textContent = '刷新';
+                        if (btn === exportBtn) btn.textContent = '导出Excel报表';
+                        if (btn === statusBtn) btn.textContent = '更新状态';
+                        if (btn === validityBtn) btn.textContent = '更新有效期';
+                        if (btn === submitInstrumentBtn) btn.textContent = '检索仪器';
+                    }
+                });
+            }
+            
+            // 显示开始使用界面
+            function showStartSection() {
+                startSection.style.display = 'block';
+                endSection.style.display = 'none';
+                inUseNoticeEl.style.display = 'none';
+                
+                // 清除使用中计时器
+                if (inUseTimerInterval) {
+                    clearInterval(inUseTimerInterval);
+                    inUseTimerInterval = null;
+                }
+            }
+            
+            // 更新使用中计时器
+            function updateInUseTimer(start) {
+                if (inUseTimerInterval) {
+                    clearInterval(inUseTimerInterval);
+                }
+                
+                function update() {
+                    const now = new Date();
+                    const diff = now - new Date(start);
+                    
+                    // 计算小时、分钟、秒
+                    const hours = Math.floor(diff / 3600000);
+                    const minutes = Math.floor((diff % 3600000) / 60000);
+                    const seconds = Math.floor((diff % 60000) / 1000);
+                    
+                    // 格式化显示
+                    currentUsageTimeEl.textContent = 
+                        `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                }
+                
+                update();
+                inUseTimerInterval = setInterval(update, 1000);
+            }
+            
+            // 显示结束使用界面
+            function showEndSection(start, userName, recordId) {
+                startTime = new Date(start);
+                currentUserName = userName;
+                startSection.style.display = 'none';
+                endSection.style.display = 'block';
+                inUseNoticeEl.style.display = 'block';
+                
+                startTimeEl.textContent = startTime.toLocaleString();
+                currentUserEl.textContent = userName;
+                currentUserNameEl.textContent = userName;
+                
+                // 更新使用中计时器
+                updateInUseTimer(startTime);
+                
+                // 保存记录ID以便后续更新
+                endBtn.setAttribute('data-record-id', recordId);
+                
+                // 更新计时器
+                updateTimer();
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+            
+            // 更新计时器
+            function updateTimer() {
+                const now = new Date();
+                const diff = now - startTime;
+                
+                // 计算小时、分钟、秒
+                const hours = Math.floor(diff / 3600000);
+                const minutes = Math.floor((diff % 3600000) / 60000);
+                const seconds = Math.floor((diff % 60000) / 1000);
+                
+                // 格式化显示
+                durationEl.textContent = 
+                    `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            // 更新状态
+            async function updateStatus(status, reason, changedBy) {
+                try {
+                    const statusRecord = {
+                        instrument_id: instrumentId,
+                        instrument_name: instrumentName,
+                        status: status,
+                        reason: reason,
+                        changed_by: changedBy,
+                        change_time: new Date().toISOString()
+                    };
+                    
+                    const { error } = await supabase
+                        .from('status_records')
+                        .insert([statusRecord]);
+                    
+                    if (error) throw error;
+                    
+                    // 更新界面显示
+                    updateStatusDisplay(status, reason, changedBy, new Date().toISOString());
+                    
+                    // 重新加载状态历史
+                    loadStatusHistory();
+                    
+                    return true;
+                } catch (error) {
+                    console.error('更新设备状态失败:', error);
+                    showNotification('网络错误，无法更新设备状态', 'error');
+                    return false;
+                }
+            }
+            
+            // 开始使用
+            startBtn.addEventListener('click', async function() {
+                if (currentStatus !== 'available') {
+                    showNotification(`仪器当前${statusIndicator.textContent.split('：')[1]}，无法使用`, 'warning');
+                    return;
+                }
+                
+                const userName = userNameInput.value.trim();
+                if (!userName) {
+                    showNotification('请输入您的姓名', 'warning');
+                    return;
+                }
+                
+                startTime = new Date();
+                currentUserName = userName;
+                
+                // 保存到云端
+                const record = {
+                    instrument_id: instrumentId,
+                    instrument_name: instrumentName,
+                    user_name: userName,
+                    start_time: startTime.toISOString(),
+                    end_time: null,
+                    duration: null
+                };
+                
+                try {
+                    setLoading(true);
+                    const { data, error } = await supabase
+                        .from('usage_records')
+                        .insert([record])
+                        .select();
+                    
+                    if (error) throw error;
+                    
+                    // 切换到结束界面
+                    showEndSection(startTime, userName, data[0].id);
+                    
+                    // 提示用户
+                    showNotification('开始使用时间已记录！请在使用完毕后再次扫描二维码。');
+                } catch (error) {
+                    console.error('保存记录失败:', error);
+                    showNotification('网络错误，无法保存记录', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            });
+            
+            // 结束使用
+            endBtn.addEventListener('click', async function() {
+                clearInterval(timerInterval);
+                
+                const endTime = new Date();
+                const duration = endTime - startTime;
+                
+                // 计算使用时长（分钟）
+                const minutes = Math.floor(duration / 60000);
+                const recordId = endBtn.getAttribute('data-record-id');
+                
+                // 更新记录
+                const updateData = {
+                    end_time: endTime.toISOString(),
+                    duration: minutes
+                };
+                
+                try {
+                    setLoading(true);
+                    const { error } = await supabase
+                        .from('usage_records')
+                        .update(updateData)
+                        .eq('id', recordId);
+                    
+                    if (error) throw error;
+                    
+                    // 提示用户
+                    showNotification(`使用结束！本次使用时长为：${minutes}分钟`);
+                    
+                    // 切换到开始界面
+                    showStartSection();
+                    
+                    // 重新加载历史记录
+                    loadHistory();
+                } catch (error) {
+                    console.error('更新记录失败:', error);
+                    showNotification('网络错误，无法更新记录', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            });
+            
+            // 更新设备状态
+            statusBtn.addEventListener('click', async function() {
+                const status = statusSelect.value;
+                const reason = statusReason.value.trim();
+                const changedBy = userNameInput.value.trim() || '管理员';
+                
+                if (status !== 'available' && !reason) {
+                    showNotification('请填写状态变更原因', 'warning');
+                    return;
+                }
+                
+                try {
+                    setLoading(true);
+                    await updateStatus(status, reason, changedBy);
+                    
+                    // 清空原因输入框
+                    statusReason.value = '';
+                    
+                    // 提示用户
+                    showNotification('设备状态已更新');
+                    
+                    // 如果状态变为不可用或维修中，且仪器正在使用中，需要结束当前使用
+                    if ((status === 'unavailable' || status === 'maintenance') && endSection.style.display !== 'none') {
+                        // 自动结束使用
+                        endBtn.click();
+                    }
+                } catch (error) {
+                    console.error('更新设备状态失败:', error);
+                    showNotification('网络错误，无法更新设备状态', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            });
+            
+            // 更新有效期
+            validityBtn.addEventListener('click', async function() {
+                const validationValue = validationInput.value;
+                const calibrationValue = calibrationInput.value;
+                
+                if (!validationValue && !calibrationValue) {
+                    showNotification('请至少填写一个有效期', 'warning');
+                    return;
+                }
+                
+                try {
+                    setLoading(true);
+                    const validityRecord = {
+                        instrument_id: instrumentId,
+                        instrument_name: instrumentName,
+                        validation_date: validationValue,
+                        calibration_date: calibrationValue,
+                        updated_by: userNameInput.value.trim() || '管理员',
+                        update_time: new Date().toISOString()
+                    };
+                    
+                    const { error } = await supabase
+                        .from('validity_records')
+                        .insert([validityRecord]);
+                    
+                    if (error) throw error;
+                    
+                    // 更新本地变量
+                    if (validationValue) validationDate = validationValue;
+                    if (calibrationValue) calibrationDate = calibrationValue;
+                    
+                    // 更新显示
+                    updateValidityDisplay();
+                    
+                    // 清空输入框
+                    validationInput.value = '';
+                    calibrationInput.value = '';
+                    
+                    // 检查是否两个有效期都已更新且未过期
+                    const now = new Date();
+                    const validationValid = validationDate && new Date(validationDate) >= now;
+                    const calibrationValid = calibrationDate && new Date(calibrationDate) >= now;
+                    
+                    // 如果之前是因为有效期过期而不可用，且现在两个有效期都已更新且有效，自动恢复为可用状态
+                    if (currentStatus === 'unavailable' && validationValid && calibrationValid) {
+                        const statusReasonText = statusInfo.textContent;
+                        if (statusReasonText.includes('验证有效期') || statusReasonText.includes('校准有效期')) {
+                            await updateStatus('available', '有效期已更新', '系统');
+                            showNotification('有效期已更新，仪器状态自动恢复为可用');
+                        }
+                    }
+                    
+                    // 提示用户
+                    showNotification('有效期已更新');
+                    
+                    // 更新有效期信息显示
+                    const updatedBy = userNameInput.value.trim() || '管理员';
+                    const updateTime = new Date().toLocaleString();
+                    validityInfo.textContent = `由 ${updatedBy} 于 ${updateTime} 更新`;
+                } catch (error) {
+                    console.error('更新有效期失败:', error);
+                    showNotification('网络错误，无法更新有效期', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            });
+            
+            // 加载使用历史记录
+            async function loadHistory() {
+                try {
+                    const { data, error } = await supabase
+                        .from('usage_records')
+                        .select('*')
+                        .eq('instrument_id', instrumentId)
+                        .order('start_time', { ascending: false })
+                        .limit(10);
+                    
+                    if (error) throw error;
+                    
+                    usageHistoryEl.innerHTML = '';
+                    
+                    if (!data || data.length === 0) {
+                        usageHistoryEl.innerHTML = '<div class="history-item">暂无使用记录</div>';
+                        return;
+                    }
+                    
+                    data.forEach(record => {
+                        const historyItem = document.createElement('div');
+                        historyItem.className = 'history-item';
+                        
+                        const startTime = new Date(record.start_time);
+                        const startFormatted = startTime.toLocaleDateString() + ' ' + startTime.toLocaleTimeString();
+                        
+                        let durationFormatted = '使用中';
+                        if (record.end_time) {
+                            const minutes = record.duration;
+                            durationFormatted = minutes >= 60 ? 
+                                `${Math.floor(minutes/60)}小时${minutes%60}分钟` : 
+                                `${minutes}分钟`;
+                        }
+                        
+                        historyItem.innerHTML = `
+                            <div>
+                                <div>${startFormatted}</div>
+                                <div style="font-size: 0.9em; color: #666;">${record.user_name}</div>
+                            </div>
+                            <span>${durationFormatted}</span>
+                        `;
+                        
+                        usageHistoryEl.appendChild(historyItem);
+                    });
+                } catch (error) {
+                    console.error('加载历史记录失败:', error);
+                    usageHistoryEl.innerHTML = '<div class="history-item">加载历史记录失败</div>';
+                }
+            }
+            
+            // 加载状态变更历史记录
+            async function loadStatusHistory() {
+                try {
+                    const { data, error } = await supabase
+                        .from('status_records')
+                        .select('*')
+                        .eq('instrument_id', instrumentId)
+                        .order('change_time', { ascending: false })
+                        .limit(5);
+                    
+                    if (error) throw error;
+                    
+                    statusHistoryEl.innerHTML = '';
+                    
+                    if (!data || data.length === 0) {
+                        statusHistoryEl.innerHTML = '<div class="history-item">暂无状态变更记录</div>';
+                        return;
+                    }
+                    
+                    data.forEach(record => {
+                        const historyItem = document.createElement('div');
+                        historyItem.className = 'history-item';
+                        
+                        const changeTime = new Date(record.change_time);
+                        const changeFormatted = changeTime.toLocaleDateString() + ' ' + changeTime.toLocaleTimeString();
+                        
+                        let statusText = '';
+                        switch(record.status) {
+                            case 'available': statusText = '可用'; break;
+                            case 'unavailable': statusText = '不可用'; break;
+                            case 'maintenance': statusText = '维修中'; break;
+                        }
+                        
+                        historyItem.innerHTML = `
+                            <div>
+                                <div>${changeFormatted}</div>
+                                <div style="font-size: 0.9em; color: 666;">${record.changed_by || '系统'}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div>${statusText}</div>
+                                <div style="font-size: 0.9em; color: 666;">${record.reason || ''}</div>
+                            </div>
+                        `;
+                        
+                        statusHistoryEl.appendChild(historyItem);
+                    });
+                } catch (error) {
+                    console.error('加载状态历史记录失败:', error);
+                    statusHistoryEl.innerHTML = '<div class="history-item">加载状态历史记录失败</div>';
+                }
+            }
+            
+            // 导出Excel
+            exportBtn.addEventListener('click', async function() {
+                try {
+                    setLoading(true);
+                    const { data, error } = await supabase
+                        .from('usage_records')
+                        .select('*')
+                        .eq('instrument_id', instrumentId)
+                        .order('start_time', { ascending: false });
+                    
+                    if (error) throw error;
+                    
+                    if (!data || data.length === 0) {
+                        showNotification('暂无使用记录可导出', 'warning');
+                        return;
+                    }
+                    
+                    // 准备数据
+                    const excelData = [['仪器编号', '仪器名称', '使用人', '开始时间', '结束时间', '使用时长(分钟)']];
+                    
+                    data.forEach(record => {
+                        const startTime = new Date(record.start_time);
+                        const endTime = record.end_time ? new Date(record.end_time) : null;
+                        
+                        excelData.push([
+                            record.instrument_id,
+                            record.instrument_name,
+                            record.user_name,
+                            startTime.toLocaleString(),
+                            endTime ? endTime.toLocaleString() : '使用中',
+                            record.duration || ''
+                        ]);
+                    });
+                    
+                    // 创建工作簿
+                    const ws = XLSX.utils.aoa_to_sheet(excelData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, '使用记录');
+                    
+                    // 导出文件
+                    const fileName = `${instrumentName}_使用记录_${new Date().toISOString().split('T')[0]}.xlsx`;
+                    XLSX.writeFile(wb, fileName);
+                    
+                    showNotification('导出成功！');
+                } catch (error) {
+                    console.error('导出失败:', error);
+                    showNotification('导出失败，请重试', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            });
+            
+            // 刷新按钮
+            refreshBtn.addEventListener('click', function() {
+                showNotification('刷新中...');
+                checkInstrumentStatus();
+            });
+            
+            // 提交仪器编号
+            submitInstrumentBtn.addEventListener('click', async function() {
+                const id = instrumentIdInput.value.trim();
+                if (!id) {
+                    showNotification('请输入仪器编号', 'warning');
+                    return;
+                }
+                
+                try {
+                    setLoading(true);
+                    
+                    // 获取仪器信息
+                    const instrumentInfo = await getInstrumentInfo(id);
+                    if (!instrumentInfo) return;
+                    
+                    // 设置全局变量
+                    instrumentId = id;
+                    instrumentName = instrumentInfo.name;
+                    
+                    // 更新界面显示
+                    instrumentNameEl.textContent = instrumentInfo.name;
+                    instrumentIdEl.textContent = instrumentInfo.id;
+                    instrumentModelEl.textContent = instrumentInfo.model || '--';
+                    responsiblePersonEl.textContent = instrumentInfo.responsible_person || '--';
+                    instrumentLocationEl.textContent = instrumentInfo.location || '--';
+                    
+                    // 隐藏输入界面，显示主内容
+                    instrumentInputCard.style.display = 'none';
+                    mainContentCard.style.display = 'block';
+                    qrCard.style.display = 'block';
+                    
+                    // 更新二维码
+                    const qrCodeUrl = window.location.href.split('?')[0] + `?id=${instrumentId}`;
+                    document.getElementById('qrcode').innerHTML = '';
+                    QRCode.toCanvas(document.getElementById('qrcode'), qrCodeUrl, {
+                        width: 180,
+                        margin: 1,
+                        color: {
+                            dark: '#2575fc',
+                            light: '#ffffff'
+                        }
+                    }, function(error) {
+                        if (error) console.error(error);
+                    });
+                    
+                    // 检查仪器状态
+                    checkInstrumentStatus();
+                } catch (error) {
+                    console.error('加载仪器失败:', error);
+                    showNotification('加载仪器失败，请重试', 'error');
+                } finally {
+                    setLoading(false);
+                }
+            });
+            
+            // 管理员登录功能
+            adminLoginLink.addEventListener('click', function() {
+                adminModal.style.display = 'flex';
+                adminPasswordInput.value = '';
+                adminPasswordInput.focus();
+            });
+            
+            adminCancelBtn.addEventListener('click', function() {
+                adminModal.style.display = 'none';
+            });
+            
+            adminLoginBtn.addEventListener('click', function() {
+                const password = adminPasswordInput.value.trim();
+                if (password === ADMIN_PASSWORD) {
+                    isAdmin = true;
+                    adminModal.style.display = 'none';
+                    
+                    // 显示管理功能
+                    validityPanel.style.display = 'block';
+                    statusPanel.style.display = 'block';
+                    adminHistorySection.style.display = 'block';
+                    exportSection.style.display = 'block';
+                    
+                    showNotification('管理员登录成功');
+                } else {
+                    showNotification('密码错误', 'error');
+                }
+            });
+            
+            // 检查URL参数
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('id')) {
+                // 如果是通过二维码扫描进入，自动填充仪器编号
+                const id = urlParams.get('id');
+                instrumentIdInput.value = id;
+                submitInstrumentBtn.click();
+            }
+        });
+    </script>
+</body>
+</html>
