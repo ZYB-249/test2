@@ -6,7 +6,6 @@
     <title>仪器使用时间追踪系统</title>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.0/build/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- 引入Supabase客户端库 -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * {
@@ -303,6 +302,24 @@
             text-align: center;
             border-left: 4px solid #ffc107;
         }
+        .user-verification {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+            display: none;
+        }
+        .user-verification input {
+            padding: 10px 15px;
+            border: 2px solid #ddd;
+            border-radius: 50px;
+            font-size: 1rem;
+            width: 100%;
+            max-width: 300px;
+            margin: 10px 0;
+            text-align: center;
+        }
         .loading {
             display: inline-block;
             width: 20px;
@@ -536,6 +553,13 @@
                     <p>该仪器正在被 <strong id="current-user-name"></strong> 使用，已使用 <strong id="current-usage-time">00:00:00</strong></p>
                 </div>
                 
+                <div id="user-verification" class="user-verification">
+                    <h3>身份验证</h3>
+                    <p>仪器正在使用中，请输入您的姓名以验证身份</p>
+                    <input type="text" id="verify-user-name" placeholder="请输入您的姓名">
+                    <button class="btn btn-submit" id="verify-user-btn">验证身份</button>
+                </div>
+                
                 <div id="start-section">
                     <p>当前时间：<span id="current-time"></span></p>
                     <div class="user-input">
@@ -610,6 +634,8 @@
             let validationDate = null;
             let calibrationDate = null;
             let isAdmin = false;
+            let currentUserRecordId = null;
+            let isCurrentUser = false;
             const ADMIN_PASSWORD = 'Aa123456'; // 管理员密码
             
             // Supabase配置 - 替换为你的Supabase项目URL和anon key
@@ -667,6 +693,9 @@
             const statusPanel = document.getElementById('status-panel');
             const adminHistorySection = document.getElementById('admin-history-section');
             const exportSection = document.getElementById('export-section');
+            const userVerification = document.getElementById('user-verification');
+            const verifyUserNameInput = document.getElementById('verify-user-name');
+            const verifyUserBtn = document.getElementById('verify-user-btn');
             
             // 显示通知
             function showNotification(message, type = 'success') {
@@ -689,7 +718,7 @@
             // 更新当前时间
             function updateCurrentTime() {
                 const now = new Date();
-                currentTimeEl.textContent = now.toLocaleTimeString();
+                currentTimeEl.textContent = now.toLocaleString();
             }
             
             // 初始化当前时间
@@ -848,8 +877,29 @@
                         const record = usageData[0];
                         if (record.end_time === null && currentStatus === 'available') {
                             // 仪器正在使用中
-                            showEndSection(record.start_time, record.user_name, record.id);
-                            updateInUseTimer(new Date(record.start_time));
+                            currentUserRecordId = record.id;
+                            
+                            // 检查本地存储，确认是否是当前用户
+                            const localUserData = localStorage.getItem(`instrument_${instrumentId}_user`);
+                            if (localUserData) {
+                                const userData = JSON.parse(localUserData);
+                                if (userData.recordId === record.id && userData.userName === record.user_name) {
+                                    // 是当前用户，直接显示结束界面
+                                    isCurrentUser = true;
+                                    showEndSection(record.start_time, record.user_name, record.id);
+                                    updateInUseTimer(new Date(record.start_time));
+                                } else {
+                                    // 不是当前用户，显示身份验证界面
+                                    isCurrentUser = false;
+                                    showUserVerification(record.user_name, record.start_time);
+                                    updateInUseTimer(new Date(record.start_time));
+                                }
+                            } else {
+                                // 没有本地存储，显示身份验证界面
+                                isCurrentUser = false;
+                                showUserVerification(record.user_name, record.start_time);
+                                updateInUseTimer(new Date(record.start_time));
+                            }
                         } else {
                             // 仪器可用或不可用
                             showStartSection();
@@ -871,6 +921,43 @@
                     setLoading(false);
                 }
             }
+            
+            // 显示用户验证界面
+            function showUserVerification(userName, startTime) {
+                startSection.style.display = 'none';
+                endSection.style.display = 'none';
+                inUseNoticeEl.style.display = 'block';
+                userVerification.style.display = 'block';
+                
+                currentUserNameEl.textContent = userName;
+                updateInUseTimer(new Date(startTime));
+            }
+            
+            // 验证用户身份
+            verifyUserBtn.addEventListener('click', function() {
+                const userName = verifyUserNameInput.value.trim();
+                if (!userName) {
+                    showNotification('请输入您的姓名', 'warning');
+                    return;
+                }
+                
+                // 检查是否是当前用户
+                if (userName === currentUserNameEl.textContent || isAdmin) {
+                    isCurrentUser = true;
+                    
+                    // 保存用户信息到本地存储
+                    localStorage.setItem(`instrument_${instrumentId}_user`, JSON.stringify({
+                        userName: userName,
+                        recordId: currentUserRecordId
+                    }));
+                    
+                    // 显示结束界面
+                    showEndSection(new Date(), userName, currentUserRecordId);
+                    userVerification.style.display = 'none';
+                } else {
+                    showNotification('您不是当前使用者，无法操作系统', 'error');
+                }
+            });
             
             // 更新状态显示
             function updateStatusDisplay(status, reason, changedBy, changedOn) {
@@ -918,7 +1005,7 @@
             
             // 设置加载状态
             function setLoading(isLoading) {
-                const buttons = [startBtn, endBtn, refreshBtn, exportBtn, statusBtn, validityBtn, submitInstrumentBtn];
+                const buttons = [startBtn, endBtn, refreshBtn, exportBtn, statusBtn, validityBtn, submitInstrumentBtn, verifyUserBtn];
                 buttons.forEach(btn => {
                     if (isLoading) {
                         btn.disabled = true;
@@ -932,6 +1019,7 @@
                         if (btn === statusBtn) btn.textContent = '更新状态';
                         if (btn === validityBtn) btn.textContent = '更新有效期';
                         if (btn === submitInstrumentBtn) btn.textContent = '检索仪器';
+                        if (btn === verifyUserBtn) btn.textContent = '验证身份';
                     }
                 });
             }
@@ -941,6 +1029,7 @@
                 startSection.style.display = 'block';
                 endSection.style.display = 'none';
                 inUseNoticeEl.style.display = 'none';
+                userVerification.style.display = 'none';
                 
                 // 清除使用中计时器
                 if (inUseTimerInterval) {
@@ -980,8 +1069,10 @@
                 startSection.style.display = 'none';
                 endSection.style.display = 'block';
                 inUseNoticeEl.style.display = 'block';
+                userVerification.style.display = 'none';
                 
-                startTimeEl.textContent = startTime.toLocaleString();
+                // 使用本地时间显示开始时间
+                startTimeEl.textContent = new Date(start).toLocaleString();
                 currentUserEl.textContent = userName;
                 currentUserNameEl.textContent = userName;
                 
@@ -1064,7 +1155,7 @@
                     instrument_id: instrumentId,
                     instrument_name: instrumentName,
                     user_name: userName,
-                    start_time: startTime.toISOString(),
+                    start_time: startTime.toISOString(), // 存储为UTC时间
                     end_time: null,
                     duration: null
                 };
@@ -1078,8 +1169,14 @@
                     
                     if (error) throw error;
                     
+                    // 保存用户信息到本地存储
+                    localStorage.setItem(`instrument_${instrumentId}_user`, JSON.stringify({
+                        userName: userName,
+                        recordId: data[0].id
+                    }));
+                    
                     // 切换到结束界面
-                    showEndSection(startTime, userName, data[0].id);
+                    showEndSection(startTime.toISOString(), userName, data[0].id);
                     
                     // 提示用户
                     showNotification('开始使用时间已记录！请在使用完毕后再次扫描二维码。');
@@ -1093,6 +1190,11 @@
             
             // 结束使用
             endBtn.addEventListener('click', async function() {
+                if (!isCurrentUser && !isAdmin) {
+                    showNotification('您不是当前使用者，无法结束使用', 'error');
+                    return;
+                }
+                
                 clearInterval(timerInterval);
                 
                 const endTime = new Date();
@@ -1104,7 +1206,7 @@
                 
                 // 更新记录
                 const updateData = {
-                    end_time: endTime.toISOString(),
+                    end_time: endTime.toISOString(), // 存储为UTC时间
                     duration: minutes
                 };
                 
@@ -1116,6 +1218,9 @@
                         .eq('id', recordId);
                     
                     if (error) throw error;
+                    
+                    // 清除本地存储
+                    localStorage.removeItem(`instrument_${instrumentId}_user`);
                     
                     // 提示用户
                     showNotification(`使用结束！本次使用时长为：${minutes}分钟`);
@@ -1135,6 +1240,11 @@
             
             // 更新设备状态
             statusBtn.addEventListener('click', async function() {
+                if (!isAdmin) {
+                    showNotification('只有管理员可以更新设备状态', 'error');
+                    return;
+                }
+                
                 const status = statusSelect.value;
                 const reason = statusReason.value.trim();
                 const changedBy = userNameInput.value.trim() || '管理员';
@@ -1169,6 +1279,11 @@
             
             // 更新有效期
             validityBtn.addEventListener('click', async function() {
+                if (!isAdmin) {
+                    showNotification('只有管理员可以更新有效期', 'error');
+                    return;
+                }
+                
                 const validationValue = validationInput.value;
                 const calibrationValue = calibrationInput.value;
                 
@@ -1257,8 +1372,9 @@
                         const historyItem = document.createElement('div');
                         historyItem.className = 'history-item';
                         
+                        // 转换为本地时间显示
                         const startTime = new Date(record.start_time);
-                        const startFormatted = startTime.toLocaleDateString() + ' ' + startTime.toLocaleTimeString();
+                        const startFormatted = startTime.toLocaleString();
                         
                         let durationFormatted = '使用中';
                         if (record.end_time) {
@@ -1307,8 +1423,9 @@
                         const historyItem = document.createElement('div');
                         historyItem.className = 'history-item';
                         
+                        // 转换为本地时间显示
                         const changeTime = new Date(record.change_time);
-                        const changeFormatted = changeTime.toLocaleDateString() + ' ' + changeTime.toLocaleTimeString();
+                        const changeFormatted = changeTime.toLocaleString();
                         
                         let statusText = '';
                         switch(record.status) {
@@ -1338,6 +1455,11 @@
             
             // 导出Excel
             exportBtn.addEventListener('click', async function() {
+                if (!isAdmin) {
+                    showNotification('只有管理员可以导出数据', 'error');
+                    return;
+                }
+                
                 try {
                     setLoading(true);
                     const { data, error } = await supabase
@@ -1357,6 +1479,7 @@
                     const excelData = [['仪器编号', '仪器名称', '使用人', '开始时间', '结束时间', '使用时长(分钟)']];
                     
                     data.forEach(record => {
+                        // 转换为本地时间显示
                         const startTime = new Date(record.start_time);
                         const endTime = record.end_time ? new Date(record.end_time) : null;
                         
@@ -1471,6 +1594,11 @@
                     statusPanel.style.display = 'block';
                     adminHistorySection.style.display = 'block';
                     exportSection.style.display = 'block';
+                    
+                    // 如果是使用中状态，启用结束按钮
+                    if (endSection.style.display !== 'none') {
+                        endBtn.disabled = false;
+                    }
                     
                     showNotification('管理员登录成功');
                 } else {
