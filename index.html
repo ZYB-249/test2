@@ -638,6 +638,9 @@
             let isCurrentUser = false;
             const ADMIN_PASSWORD = 'Aa123456'; // 管理员密码
             
+            // 新增变量：存储当前使用记录的原始开始时间
+            let originalStartTime = null;
+            
             // Supabase配置 - 替换为你的Supabase项目URL和anon key
             const SUPABASE_URL = 'https://buvgkyrdijqniojgmobf.supabase.co'; // 替换为你的Supabase URL
             const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ1dmdreXJkaWpxbmlvamdtb2JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc3NTUzMTMsImV4cCI6MjA3MzMzMTMxM30.k3tpl18Jg44VdsLDT4iZ9L9Lajh0eZDEgzEle3egfTk'; // 替换为你的Supabase anon key
@@ -878,6 +881,7 @@
                         if (record.end_time === null && currentStatus === 'available') {
                             // 仪器正在使用中
                             currentUserRecordId = record.id;
+                            originalStartTime = record.start_time; // 保存原始开始时间
                             
                             // 检查本地存储，确认是否是当前用户
                             const localUserData = localStorage.getItem(`instrument_${instrumentId}_user`);
@@ -951,8 +955,8 @@
                         recordId: currentUserRecordId
                     }));
                     
-                    // 显示结束界面
-                    showEndSection(new Date(), userName, currentUserRecordId);
+                    // 使用原始开始时间，而不是当前时间
+                    showEndSection(originalStartTime, userName, currentUserRecordId);
                     userVerification.style.display = 'none';
                 } else {
                     showNotification('您不是当前使用者，无法操作系统', 'error');
@@ -1036,6 +1040,9 @@
                     clearInterval(inUseTimerInterval);
                     inUseTimerInterval = null;
                 }
+                
+                // 重置原始开始时间
+                originalStartTime = null;
             }
             
             // 更新使用中计时器
@@ -1149,6 +1156,7 @@
                 
                 startTime = new Date();
                 currentUserName = userName;
+                originalStartTime = startTime.toISOString(); // 保存原始开始时间
                 
                 // 保存到云端
                 const record = {
